@@ -14,7 +14,7 @@ Please read this paper and prepare 15 Beamer slides. The intended audience inclu
 \end{itemize}
 ```
 
-An exception is when you use equations. Then, it should be something like this.
+When you use equations, use less bullet points. For example:
 
 ```latex
 \begin{align}
