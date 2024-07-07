@@ -1,0 +1,91 @@
+Please read this paper and prepare 15 Beamer slides. The intended audience includes machine learning professors, PhD students, and AI research scientists in AI/tech. Ensure the slides are self-contained so that the content is understandable independently. Pay attention to the following guidelines:
+
+- Be super specific: Each slide should present ideas in detail. Use bullet points, but avoid being abstract and provide DETAILED information. For example:
+  - Do not say "This paper provides insights into the new architecture." Instead, explain the specific insights and the architecture details.
+  - Do not say "The proposed method demonstrates better accuracy than baselines." Instead, specify the tasks/benchmarks (e.g., dataset/benchmark names) where the proposed method excels, and quantify the improvement (e.g., 14% better accuracy).
+- Maximum number of `\item` between `\begin{itemize}` and `\end{itemize}` is 4. For example:
+
+```latex
+\begin{itemize}
+\item 1st item
+\item 2nd item
+\item 3rd item
+\item 4th item
+\end{itemize}
+```
+
+An exception is when you use equations. Then, it should be something like this.
+
+```latex
+\begin{align}
+Equation goes here...
+\end{align}
+\begin{itemize}
+\item 1st item, explain notations carefully here.
+\item 2nd item, explain the meaning of the equation here.
+\end{itemize}
+```
+
+- Logical Flow: Organize the slides in a logical sequence, typically following the structure of the paper:
+  - First slide: should include the full title of the paper and the first author of the paper. Write only the last name and omit the first name. Write "\author[]{Author:  author name et al.}". Use footnotesize font and centerize URLs. Make URLs clickable. No need to include today's date, but please include the date that the paper was released or uploaded to arxiv. This information is provided in the beginning of the paper. Note that the title, author, and date commands should be placed in the preamble and not in the first frame.
+  - Next slide: executive summary of the paper.
+  - Introduction slides: focus on the background and motivation of the paper. If necessary, include some issues of previous work. It shouldn't have too much overlap with the executive summary. Look for a figure that explains the overview of the proposed method. If such a figure exists, make a slide with that figure. This is very helpful for the reader.
+  - Proposed method slides: such as the novel architecture, new loss function, new learning objective, new dataset, etc. this depends on the paper. Explain the core ideas and innovations that were introduced. Make sure to explain in detail since this is the MOST IMPORTANT PART. Explain WHY certain choices were made.
+  - Result slides: such as the design of the experiments and the results. be super specific. whenever you say "significant improvement" or "superior results", explain quantitatively.
+  - Concluding slides: you may use a slide for conclusion and future directions. Do NOT make a "Thank you" slide after the concluding slide.
+
+- Figures: As I have explained, look for a figure that explains the overview of the proposed method or a figure that demonstrates the superior performance of the proposed method. If there are such figures, include 1 or 2 figures in the beamer slides. An example of a figure in beamer:
+
+```latex
+\begin{frame}{}
+  \begin{figure}
+    \centering
+    \includegraphics[width=0.7\textwidth,height=0.7\textheight,keepaspectratio]{example.png}
+    \caption{Only use up to 1 sentence here.}
+  \end{figure}
+\end{frame}
+```
+Make sure to replace `example-image.png` with the actual figure file name with the correct path.
+For example, it might be located in `figures/example-image.png`. Basically this should also be specified in the paper information I gave you. I prefer not to have frame title/bullet-point text in the slide if we are using the caption to explain the figure. Finally, don't forget `[width=0.7\textwidth,height=0.7\textheight,keepaspectratio]`!
+
+- Equations and math: If there is an important equation, definitely include it! Examples are the learning objective or the equations that might be used in a novel neural network architecture. In that case, also define the symbols/notations. However, please enter a new line or make the font size smaller for long expressions because it won't fit in the slide.
+- Visual: you may use bold to emphasize some important keywords. use itemize instead of writing paragraphs. but make sure to write the full sentence.
+- Do not use the – character. It does not compile on my environment. Use - instead. Use abbreviations such as GANs, VAEs, SGD, LLM, and so on. use "w/" for "with" and "w/o" for "without".
+
+Begin your latex code with the following.
+```latex
+\documentclass[aspectratio=169,14pt]{beamer}
+\usepackage{graphicx}
+\usepackage{mathtools,amssymb}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{amsfonts}
+\usepackage{booktabs}
+\usepackage{xspace}
+\usetheme{Berlin}
+\usecolortheme{dolphin}
+\usefonttheme{professionalfonts}
+\setbeamertemplate{footline}{}
+\institute{\normalsize created by paper2slides}
+\setbeamersize{text margin left=0.1cm, text margin right=0.3cm}
+\setbeamertemplate{headline}{}
+\setbeamertemplate{section in head/foot}{}
+\setbeamertemplate{subsection in head/foot}{}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.5\paperwidth,ht=2.25ex,dp=1ex,right]{title in head/foot}%
+    \usebeamerfont{title in head/foot}\insertshorttitle\hspace*{2ex}
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.5\paperwidth,ht=2.25ex,dp=1ex,left]{date in head/foot}%
+    \usebeamerfont{date in head/foot}\hspace*{2ex}
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+% PLACEHOLDER_FOR_NEWCOMMANDS
+```
+
+Make sure to provide the final perfect polished version because I will use it directly without editing further.
+
+Now provide the latex source code: start with ```latex, provide latex code, and then end with ```. Provide the full latex source code at once.

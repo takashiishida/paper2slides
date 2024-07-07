@@ -1,0 +1,22 @@
+Based on the paper above, we have the slide version written in beamer. I want you to read the beamer code and provide a revised version of it. Pay attention to the following:
+- If you find any bugs or errors, fix it.
+- Does the paper include a figure that explains the main ideas of the proposed method? If the paper has one, it would be a good idea to also have it in the slides.
+- If the beamer code uses any figures, is the path correct? Make sure the path, file name, and file extension are equivalent to the information in the paper. For example, if the paper is using `figures/image.png`, we should also use that in our beamer code rather than `image.png`. Similarly, if the paper is using `image.png`, we should also use `image.png` rather than `figures/image.png`. For your information, the original paper uses PLACEHOLDER_FOR_FIGURE_PATHS for figures.
+- The beamer slides are 16:9 aspect ratio. If you think an equation is too long, we can add new lines to the equation. If it is a very complicated equation, consider removing the equation and try to explain it with natural language. If you think the table might not fit, consider making the font size smaller for the table.
+- Make sure escape characters are used with a backslash. For example, if you are using ampersand as a regular character, you need to escape it unless you are using it with a special meaning (e.g., using it in alignment in tables and arrays.)
+- There may be many `newcommands` in the beamer. Please do not remove them even if you feel they are unnecessary.
+- If commands such as `\cite` or `\bibliography` are used for citation, remove them. We do not have a bib file.
+- If there is a figure in a frame, DON'T use any text other than the caption of the figure. So this means we shouldn't have `itemize` or even a title in a frame with a figure. Furthermore, use only up to one figure per a frame. An example of using a figure:
+```latex
+\begin{frame}{}
+  \begin{figure}
+    \centering
+    \includegraphics[width=0.45\textwidth,height=0.45\textheight,keepaspectratio]{FIGURE_PATH}
+    \caption{Performance trade-off vs. cost.}
+  \end{figure}
+\end{frame}
+```
+
+Always use this specific setup: `[width=0.75\textwidth,height=0.75\textheight,keepaspectratio]` for `includegraphics`.
+
+Now provide the latex source code: start with ```latex, provide latex code, and then end with ```. Provide the full latex source code at once.
