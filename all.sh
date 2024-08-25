@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This script takes one argument and passes it to 3 Python scripts. Finally it opens the generated PDF file.
+# This script takes one argument and passes it to 3 Python scripts. Finally, it opens the generated PDF file.
 
 # Function to print messages with separators
 print_separator() {
@@ -10,22 +10,58 @@ print_separator() {
     printf "\n%s\n%s\n%s\n\n" "$sep_line" "$message" "$sep_line"
 }
 
-# Check if an argument is provided
-if [ $# -eq 0 ]; then
+# Check if at least one argument is provided
+if [ $# -lt 1 ]; then
     echo "No argument supplied"
     exit 1
 fi
 
+arxiv_id="$1"
+shift
+
+# Initialize options
+use_linter=false
+use_pdfcrop=false
+
+# Parse the optional arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        use_linter)
+            use_linter=true
+            ;;
+        use_pdfcrop)
+            use_pdfcrop=true
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
 # Run the Python scripts with the provided argument
 print_separator "starting to run arxiv2tex.py"
-python arxiv2tex.py "$1"
+python arxiv2tex.py "$arxiv_id"
 print_separator "finished running arxiv2tex.py and starting to run tex2beamer.py"
-python tex2beamer.py "$1"
+
+# Build the tex2beamer command
+tex2beamer_command="python tex2beamer.py --arxiv_id $arxiv_id"
+if $use_linter; then
+    tex2beamer_command="$tex2beamer_command --use_linter"
+fi
+if $use_pdfcrop; then
+    tex2beamer_command="$tex2beamer_command --use_pdfcrop"
+fi
+
+# Run tex2beamer.py with the appropriate flags
+eval $tex2beamer_command
+
 print_separator "finished running tex2beamer.py and starting to run beamer2pdf.py"
-python beamer2pdf.py "$1"
+python beamer2pdf.py "$arxiv_id"
 
 # Path to the PDF file
-pdf_file_path="source/$1/slides.pdf"
+pdf_file_path="source/$arxiv_id/slides.pdf"
 
 # Check if PDF file exists
 if [ ! -f "$pdf_file_path" ]; then
