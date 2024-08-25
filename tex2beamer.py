@@ -3,6 +3,8 @@ import re
 import sys
 import logging
 from openai import OpenAI
+import argparse
+import subprocess
 
 # Set up general logging
 general_logger = logging.getLogger('general')
@@ -23,41 +25,24 @@ llm_logger.addHandler(llm_file_handler)
 # Initialize OpenAI client
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
-def extract_newcommand_lines(file_path: str) -> list[str]:
+def find_image_files(directory: str) -> list[str]:
     """
-    Extracts LaTeX \newcommand, \def, \DeclareMathOperator, and \DeclarePairedDelimiter lines from a file.
-    
-    :param file_path: Path to the LaTeX file
-    :return: List of command lines
+    Searches for image files (.pdf, .png, .jpeg, .jpg) in the specified directory and
+    returns their paths relative to the specified directory.
     """
-    commands = ['\\newcommand', '\\def', '\\DeclareMathOperator', '\\DeclarePairedDelimiter']
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-    return [
-        line.strip() for line in lines
-        if any(cmd in line for cmd in commands) and not line.strip().startswith('%')
-    ]
-
-def extract_figure_paths(latex_code: str) -> list[str]:
-    """
-    Extracts the paths of figures from LaTeX code.
-    
-    :param latex_code: LaTeX code as a string
-    :return: List of figure paths
-    """
-    pattern = re.compile(r'\\includegraphics(?:\[.*?\])?\{(.*?)\}')
-    return pattern.findall(latex_code)
+    image_extensions = ['.pdf', '.png', '.jpeg', '.jpg']
+    image_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if any(file.endswith(ext) for ext in image_extensions):
+                relative_path = os.path.relpath(os.path.join(root, file), directory)
+                image_files.append(relative_path)
+    return image_files
 
 def read_file(file_path: str) -> str:
-    """
-    Reads the content of a file.
-    
-    :param file_path: Path to the file
-    :return: Content of the file
-    """
     with open(file_path, 'r') as file:
         return file.read()
-
+    
 def LLMcall(prompt: str, stage: int) -> dict:
     """
     Calls the language model with the provided prompt.
@@ -67,13 +52,16 @@ def LLMcall(prompt: str, stage: int) -> dict:
     :return: Response from the language model
     """
     if stage == 1:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_initial.txt) to LLM:\n{prompt}")  # Log the prompt to the LLM log file
+        llm_logger.info(f"Sending paper and prompt (based on prompt_initial.txt) to LLM:\n{prompt}") 
         general_logger.info("Sending paper and prompt (based on prompt_initial.txt) to LLM...")
     elif stage == 2:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_update.txt) to LLM:\n{prompt}")  # Log the prompt to the LLM log file
+        llm_logger.info(f"Sending paper and prompt (based on prompt_update.txt) to LLM:\n{prompt}")
         general_logger.info("Sending paper, beamer, and prompt (based on prompt_update.txt) to LLM...")
+    elif stage == 3:
+        llm_logger.info(f"Sending prompt (based on prompt_revise.txt) to LLM:\n{prompt}")
+        general_logger.info("Sending beamer, linter, and prompt (based on prompt_revise.txt) to LLM...")
     else:
-        general_logger.error("Invalid stage. Please provide either 1 or 2.")
+        general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
         sys.exit(1)
     response = client.chat.completions.create(model="gpt-4o",
         messages=[{
@@ -86,28 +74,80 @@ def LLMcall(prompt: str, stage: int) -> dict:
             }
         ],
     )
-    llm_logger.info(f"Received response from LLM:\n{response}")  # Log the response to the LLM log file
+    llm_logger.info(f"Received response from LLM:\n{response}")
     general_logger.info("Received response from LLM.")
     return response
 
 def extract_content_from_response(response: dict, language: str = 'latex') -> str | None:
     """
-    Extracts content from the language model's response.
-    
     :param response: Response from the language model
     :param language: Language to extract (default is 'latex')
     :return: Extracted content
     """
     pattern = re.compile(rf'```{language}\s*(.*?)```', re.DOTALL)
     match = pattern.search(response.choices[0].message.content)
-    return match.group(1).strip() if match else None
+    content = match.group(1).strip() if match else None
+    return content
 
-def main(arxiv_id):
+def add_additional_tex(content: str) -> str:
+    """
+    Check if \input{ADDITIONAL.tex} exists (LLM may ignore the instruction to include this)
+    """
+    if content and not re.search(r'\\input\{ADDITIONAL\.tex\}', content):
+        # Add \input{ADDITIONAL.tex} after \documentclass line
+        content = re.sub(r'\\documentclass.*', r'\g<0>\n\\input{ADDITIONAL.tex}', content, count=1)
+        general_logger.info("\\input{ADDITIONAL.tex} is missing. Added manually.")
+    return content
+
+def process_stage(stage: int, latex_source: str, beamer_code: str, linter_log: str, figure_paths: list[str], slides_tex_path: str):
+    """
+    Sends the prompt to the language model, extracts the Beamer code from the response, and saves it to the specified path.
+    """
+    if stage == 1:
+        prompt_file = "prompt_initial.txt"
+    elif stage == 2:
+        prompt_file = "prompt_update.txt"
+    elif stage == 3:
+        prompt_file = "prompt_revise.txt"
+    else:
+        general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
+        sys.exit(1)
+    
+    prompt_template = read_file(prompt_file)
+    prompt = prompt_template.replace('PLACEHOLDER_FOR_FIGURE_PATHS', ' '.join(figure_paths))
+
+    if stage == 1:
+        full_prompt = (
+            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
+            f'========The following are the instructions ========\n{prompt}'
+        )
+    elif stage == 2 or stage == 3:
+        full_prompt = (
+            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
+            f'========The following are the slides ======== \n'
+            f'```latex\n{beamer_code}\n```\n ================\n\n'
+            f'========The following are the instructions ========\n{prompt}'
+        )
+        if stage == 3:
+            full_prompt += f'\n\n ======== The following is the result of ChkTeX ========\n{linter_log}\n'
+
+    response = LLMcall(full_prompt, stage=stage)
+    new_beamer_code = extract_content_from_response(response)
+    new_beamer_code = add_additional_tex(new_beamer_code)
+    
+    if not new_beamer_code:
+        general_logger.error("No beamer code found in the response.")
+        sys.exit(1)
+
+    with open(slides_tex_path, 'w') as file:
+        file.write(new_beamer_code)
+    general_logger.info(f'Beamer code saved to {slides_tex_path}')
+
+
+def main(args):
     # Define paths
-    tex_files_directory = f"source/{arxiv_id}/"
+    tex_files_directory = f"source/{args.arxiv_id}/"
     flattened_tex_path = os.path.join(tex_files_directory, "FLATTENED.tex")
-    beamer_prompt_file = "prompt_initial.txt"
-    beamer_update_prompt_file = "prompt_update.txt"
     slides_tex_path = os.path.join(tex_files_directory, "slides.tex")
 
     # Check if FLATTENED.tex exists
@@ -119,45 +159,37 @@ def main(arxiv_id):
 
     # Read the content of FLATTENED.tex
     latex_source = read_file(flattened_tex_path)
-    figure_paths = extract_figure_paths(latex_source)
-    newcommand_lines = extract_newcommand_lines(flattened_tex_path)
-    newcommand_lines_str = '\n'.join(newcommand_lines)
+    figure_paths = find_image_files(tex_files_directory)
 
-    # Prepare beamer prompt
-    beamer_prompt = read_file(beamer_prompt_file)
-    beamer_prompt = beamer_prompt.replace('% PLACEHOLDER_FOR_NEWCOMMANDS', newcommand_lines_str)
-    full_prompt = latex_source + '\n' + beamer_prompt
+    if args.use_pdfcrop:
+        for figure_path in figure_paths:
+            if figure_path.endswith('.pdf'):
+                subprocess.run(["pdfcrop", os.path.join(tex_files_directory, figure_path), os.path.join(tex_files_directory, figure_path)])
 
-    # Get initial beamer code
-    response = LLMcall(full_prompt, stage=1)
-    beamer_code = extract_content_from_response(response)
-    if beamer_code:
-        general_logger.info("Beamer code extracted.")
-    else:
-        general_logger.error("No beamer code found in the response.")
-        sys.exit(1)
 
-    # Prepare updated prompt
-    beamer_update_prompt = read_file(beamer_update_prompt_file)
-    beamer_update_prompt = beamer_update_prompt.replace('PLACEHOLDER_FOR_FIGURE_PATHS', ' '.join(figure_paths))
-    updated_full_prompt = f'========The following is the paper ========\n{latex_source}\n ======== The following are the slides ======== \n```latex\n{beamer_code}\n```\n ======== The following are the instructions ========\n{beamer_update_prompt}'
+    # Process stage 1
+    process_stage(1, latex_source, '', '', figure_paths, slides_tex_path)
 
-    # Get updated beamer code
-    response = LLMcall(updated_full_prompt, stage=2)
-    updated_beamer_code = extract_content_from_response(response)
-    if not updated_beamer_code:
-        general_logger.error("No updated beamer code found in the response.")
-        sys.exit(1)
+    # Process stage 2
+    beamer_code = read_file(slides_tex_path) # read generated beamer code from stage 1
+    process_stage(2, latex_source, beamer_code, '', figure_paths, slides_tex_path)
 
-    # Write the updated beamer code to a .tex file
-    with open(slides_tex_path, 'w') as file:
-        file.write(updated_beamer_code)
-    general_logger.info(f'Content saved to {slides_tex_path}')
+    # Process stage 3 (if linter is used)
+    if not args.use_linter:
+        return None
+
+    subprocess.run(["chktex", "-o", f"{tex_files_directory}linter.log", slides_tex_path])
+    linter_log = read_file(f"{tex_files_directory}linter.log")
+    
+    beamer_code = read_file(slides_tex_path) # read updated beamer code from stage 2
+    process_stage(3, latex_source, beamer_code, linter_log, figure_paths, slides_tex_path)
+
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        arxiv_id = sys.argv[1]
-        main(arxiv_id)
-    else:
-        general_logger.error("Please provide an arXiv ID as a command line argument.")
-        sys.exit(1)
+
+    parser = argparse.ArgumentParser(description="Generate Beamer slides from LaTeX papers.")
+    parser.add_argument('--arxiv_id', type=str, help='The arXiv ID of the paper to process')
+    parser.add_argument('--use_linter', action='store_true', help='Whether to use the linter')
+    parser.add_argument('--use_pdfcrop', action='store_true', help='Whether to use pdfcrop')
+    args = parser.parse_args()
+    main(args)
