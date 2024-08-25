@@ -102,4 +102,4 @@ You can also run the Python scripts individually for more control.
 The prompts are saved in `prompt_initial.txt`, `prompt_update.txt`, and `prompt_revise.txt` but feel free to adjust them to your needs. They contain a placeholder called `PLACEHOLDER_FOR_FIGURE_PATHS`. This will be replaced with the figure paths used in the paper. We want to make sure the paths are correctly used in the beamer code. The LLM often make mistakes, so we explicitly include this in the prompt.
 
 ## Notes
-The success rate is around 90 percent in my experience (compile may fail or image path may be wrong in some cases). If you have encounter any issues or have any suggestions for improvements, please feel free to let me know!
+The success rate is around 90 percent in my experience (compile may fail or image path may be wrong in some cases). If you encounter any issues or have any suggestions for improvements, please feel free to let me know!
