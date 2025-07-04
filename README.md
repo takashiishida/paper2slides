@@ -1,17 +1,15 @@
 # paper2slides
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1-412991.svg) ![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg) ![arXiv](https://img.shields.io/badge/arXiv-papers-b31b1b.svg)
+
+
 Transform any arXiv papers into slides using Large Language Models (LLMs)! This tool is useful for quickly grasping the main ideas of research papers.
 
-Some examples of generated slides are: [word2vec](demo/1301.3781.pdf), [GAN](demo/1406.2661.pdf), [Transformer](demo/1706.03762.pdf), [ViT](demo/2010.11929.pdf), [Chain-of-Thought](demo/2201.11903.pdf), [STaR](demo/2203.14465.pdf), [DPO](demo/2305.18290.pdf), and [The AI Scientist](demo/2408.06292.pdf).
-See many other examples of generated slides in [Demo](demo/).
+Some examples of generated slides are in the [Demo](demo/) directory.
 
-*The script will download files from the internet (arXiv), send information to the OpenAI API, and compile locally. Please be cautious about the content being shared and the potential risks. If you have a specific Arxiv ID that you are interested in and do not want to run the code yourself, let me know in "Discussions" and I would be happy to add the slides to the demo list.*
+*The script will download files from the internet (arXiv), send information to the OpenAI API, and compile locally. Please be cautious about the content being shared and the potential risks.*
 
 ## How does it work?
-
-<div style="text-align: center;">
-    <img src="diagram.png" alt="Description" style="width: 100%; max-width: 500px;"/>
-</div>
 
 The process begins by downloading the source files of an arXiv paper. The main LaTeX file is identified and flattened, merging all input files into a single document (`FLATTENED.tex`). We preprocess this merged file by removing comments and the appendix. This preprocessed file, along with instructions for creating good slides, forms the basis of our prompt.
 
@@ -27,12 +25,9 @@ The `all.zsh` script automates the entire process, typically completing in less 
 
 Requirements are:
 - Python 3.10 or higher
-- `requests` library
-- `arxiv` library
-- `openai` library
-- `arxiv-to-prompt` library
 - OpenAI API key
 - A working installation of `pdflatex`
+- [requirements.txt](requirements.txt)
 - Optional: chktex (for linter) and pdfcrop
 
 Steps for installation:

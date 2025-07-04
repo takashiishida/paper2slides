@@ -30,6 +30,11 @@ client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 # Initialize prompt manager
 prompt_manager = PromptManager()
 
+def read_file(file_path: str) -> str:
+    """Read a file and return its contents as a string."""
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read()
+
 def find_image_files(directory: str) -> list[str]:
     """
     Searches for image files (.pdf, .png, .jpeg, .jpg) in the specified directory and
