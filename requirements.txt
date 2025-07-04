@@ -1,0 +1,4 @@
+requests
+arxiv
+openai
+arxiv-to-prompt>=0.2.0

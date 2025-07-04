@@ -5,6 +5,7 @@ import logging
 from openai import OpenAI
 import argparse
 import subprocess
+from arxiv_to_prompt import process_latex_source
 
 # Set up general logging
 general_logger = logging.getLogger('general')
@@ -147,18 +148,25 @@ def process_stage(stage: int, latex_source: str, beamer_code: str, linter_log: s
 def main(args):
     # Define paths
     tex_files_directory = f"source/{args.arxiv_id}/"
-    flattened_tex_path = os.path.join(tex_files_directory, "FLATTENED.tex")
     slides_tex_path = os.path.join(tex_files_directory, "slides.tex")
 
-    # Check if FLATTENED.tex exists
-    if not os.path.isfile(flattened_tex_path):
-        general_logger.error(f"FLATTENED.tex not found in {tex_files_directory}")
+    # Create directory if it doesn't exist
+    os.makedirs(tex_files_directory, exist_ok=True)
+
+    # Get LaTeX source using arxiv-to-prompt with custom cache directory
+    general_logger.info(f"Getting LaTeX source for {args.arxiv_id} using arxiv-to-prompt")
+    try:
+        latex_source = process_latex_source(
+            args.arxiv_id, 
+            keep_comments=False, 
+            remove_appendix_section=True,
+            cache_dir=tex_files_directory
+        )
+    except Exception as e:
+        general_logger.error(f"Failed to get LaTeX source from arxiv-to-prompt: {e}")
         sys.exit(1)
 
-    general_logger.info(f"Using LaTeX file: {flattened_tex_path}")
-
-    # Read the content of FLATTENED.tex
-    latex_source = read_file(flattened_tex_path)
+    # Find image files in the downloaded directory
     figure_paths = find_image_files(tex_files_directory)
 
     if args.use_pdfcrop:

@@ -41,9 +41,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Run the Python scripts with the provided argument
-print_separator "starting to run arxiv2tex.py"
-python arxiv2tex.py "$arxiv_id"
-print_separator "finished running arxiv2tex.py and starting to run tex2beamer.py"
+print_separator "starting to run tex2beamer.py (using arxiv-to-prompt)"
 
 # Build the tex2beamer command
 tex2beamer_command="python tex2beamer.py --arxiv_id $arxiv_id"

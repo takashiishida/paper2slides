@@ -30,7 +30,7 @@ Requirements are:
 - `requests` library
 - `arxiv` library
 - `openai` library
-- `arxiv-latex-cleaner` library
+- `arxiv-to-prompt` library
 - OpenAI API key
 - A working installation of `pdflatex`
 - Optional: chktex (for linter) and pdfcrop
@@ -45,7 +45,7 @@ Steps for installation:
 
 2. Install the required Python packages:
     ```sh
-    pip install requests arxiv openai arxiv-latex-cleaner
+    pip install -r requirements.txt
     ```
 
 3. Ensure `pdflatex` is installed and available in your system's PATH. Optionally check if you can compile the sample `test.tex` by `pdflatex test.tex`. Check if `test.pdf` is genereated correctly. Optionally check `chktex` and `pdfcrop` are working.
@@ -72,26 +72,18 @@ The ID can be identified from the URL: the ID for `https://arxiv.org/abs/xxxx.xx
 
 You can also run the Python scripts individually for more control.
 
-1. **Download and Process arXiv Source Files**
-
-    ```sh
-    python arxiv2tex.py <arxiv_id>
-    ```
-
-    This script downloads the source files of the specified arXiv paper, extracts them, and processes the main LaTeX file. Results will be saved in `source/<arxiv_id>/FLATTENED.tex` and `source/<arxiv_id>/ADDITIONAL.tex`.
-
-2. **Convert LaTeX to Beamer**
+1. **Convert LaTeX to Beamer**
 
     ```sh
     python tex2beamer.py --arxiv_id <arxiv_id>
     ```
 
-    This script reads the processed LaTeX files and prepares Beamer slides. This is where we are using the OpenAI API. We call twice, first to generate the beamer code, and then to self-inspect the beamer code.
+    This script uses the `arxiv-to-prompt` tool to download and process the arXiv paper, then prepares Beamer slides. This is where we are using the OpenAI API. We call twice, first to generate the beamer code, and then to self-inspect the beamer code.
     Optionally use the following flags: `--use_linter` and `--use_pdfcrop`.
     The prompts sent to the LLM and the response from the LLM will be saved in `tex2beamer.log`.
     The linter log will be saved in `source/<arxiv_id>/linter.log`.
 
-3. **Convert Beamer to PDF**
+2. **Convert Beamer to PDF**
     ```sh
     python beamer2pdf.py <arxiv_id>
     ```
