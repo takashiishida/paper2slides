@@ -7,14 +7,9 @@ Transform any arXiv papers into slides using LLMs! This tool is useful for quick
 
 ## Installation
 
-Requirements are:
-- Python 3.10 or higher
-- OpenAI API key
-- A working installation of `pdflatex`
-- [requirements.txt](requirements.txt)
-- Optional: chktex (for linter) and pdfcrop
+Python 3.10 or higher is required.
 
-Steps for installation:
+To install:
 
 1. Clone this repository:
     ```sh
@@ -39,7 +34,7 @@ Steps for installation:
 Once installed, generate slides from any arXiv paper:
 
 ```sh
-python paper2slides.py all 2301.07041
+python paper2slides.py all 2505.18102
 ```
 
 This will download the paper, generate slides, compile to PDF, and open the presentation automatically.
