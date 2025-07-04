@@ -198,7 +198,7 @@ Examples:
   # Full pipeline without opening PDF
   python paper2slides.py all 2505.18102 --no-open
 
-For backward compatibility, running without subcommand defaults to 'all':
+Running without subcommand defaults to 'all':
   python paper2slides.py 2505.18102  # same as 'all 2505.18102'
         """
     )
@@ -257,7 +257,7 @@ def main():
     """Main entry point."""
     parser = create_parser()
     
-    # Handle backward compatibility: if first arg is not a subcommand or global flag,
+    # Handle convenience: if first arg is not a subcommand or global flag,
     # treat it as arxiv_id for the 'all' command
     if len(sys.argv) > 1 and sys.argv[1] not in ['generate', 'compile', 'all', '-h', '--help', '--verbose', '-v']:
         # Insert 'all' as the subcommand

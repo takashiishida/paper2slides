@@ -11,11 +11,15 @@ from prompts import PromptManager
 # Set up general logging
 general_logger = logging.getLogger('general')
 general_logger.setLevel(logging.INFO)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-general_logger.addHandler(console_handler)
+# Only add console handler if not already configured by parent process
+if not general_logger.handlers:
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    general_logger.addHandler(console_handler)
+# Prevent propagation to root logger to avoid duplicate messages
+general_logger.propagate = False
 # Set up LLM logging (only to file)
 llm_logger = logging.getLogger('llm')
 llm_logger.setLevel(logging.INFO)
