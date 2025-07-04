@@ -5,15 +5,21 @@ import logging
 from openai import OpenAI
 import argparse
 import subprocess
+from arxiv_to_prompt import process_latex_source
+from prompts import PromptManager
 
 # Set up general logging
 general_logger = logging.getLogger('general')
 general_logger.setLevel(logging.INFO)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-general_logger.addHandler(console_handler)
+# Only add console handler if not already configured by parent process
+if not general_logger.handlers:
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    general_logger.addHandler(console_handler)
+# Prevent propagation to root logger to avoid duplicate messages
+general_logger.propagate = False
 # Set up LLM logging (only to file)
 llm_logger = logging.getLogger('llm')
 llm_logger.setLevel(logging.INFO)
@@ -24,6 +30,14 @@ llm_logger.addHandler(llm_file_handler)
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+
+# Initialize prompt manager
+prompt_manager = PromptManager()
+
+def read_file(file_path: str) -> str:
+    """Read a file and return its contents as a string."""
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read()
 
 def find_image_files(directory: str) -> list[str]:
     """
@@ -39,44 +53,6 @@ def find_image_files(directory: str) -> list[str]:
                 image_files.append(relative_path)
     return image_files
 
-def read_file(file_path: str) -> str:
-    with open(file_path, 'r') as file:
-        return file.read()
-    
-def LLMcall(prompt: str, stage: int) -> dict:
-    """
-    Calls the language model with the provided prompt.
-    
-    :param prompt: Prompt to send to the language model
-    :param stage: Stage 1 or 2. Stage 1 is for the initial prompt, and stage 2 is for the update prompt.
-    :return: Response from the language model
-    """
-    if stage == 1:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_initial.txt) to LLM:\n{prompt}") 
-        general_logger.info("Sending paper and prompt (based on prompt_initial.txt) to LLM...")
-    elif stage == 2:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_update.txt) to LLM:\n{prompt}")
-        general_logger.info("Sending paper, beamer, and prompt (based on prompt_update.txt) to LLM...")
-    elif stage == 3:
-        llm_logger.info(f"Sending prompt (based on prompt_revise.txt) to LLM:\n{prompt}")
-        general_logger.info("Sending beamer, linter, and prompt (based on prompt_revise.txt) to LLM...")
-    else:
-        general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
-        sys.exit(1)
-    response = client.chat.completions.create(model="gpt-4o",
-        messages=[{
-                "role": "system",
-                "content": "You are a professional assistant specialized in machine learning and deep learning, LaTeX, and Beamer."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-    )
-    llm_logger.info(f"Received response from LLM:\n{response}")
-    general_logger.info("Received response from LLM.")
-    return response
 
 def extract_content_from_response(response: dict, language: str = 'latex') -> str | None:
     """
@@ -88,6 +64,124 @@ def extract_content_from_response(response: dict, language: str = 'latex') -> st
     match = pattern.search(response.choices[0].message.content)
     content = match.group(1).strip() if match else None
     return content
+
+def extract_definitions_and_usepackage_lines(latex_source: str) -> list[str]:
+    """
+    Extracts definitions and usepackage lines from LaTeX source
+    """
+    commands = ['\\def', '\\DeclareMathOperator', '\\DeclarePairedDelimiter']
+    packages_to_comment_out = ['amsthm', 'color', 'hyperref', 'xcolor', 'ragged2e', 'times', 'graphicx', 'enumitem']
+    extracted_lines = []
+
+    lines = latex_source.split('\n')
+    inside_command = False
+    accumulated_command = []
+
+    for line in lines:
+        stripped_line = line.strip()
+
+        if inside_command:
+            accumulated_command.append(stripped_line)
+            if stripped_line.endswith('}'):
+                extracted_lines.append(' '.join(accumulated_command))
+                inside_command = False
+                accumulated_command = []
+            continue
+
+        if any(stripped_line.startswith(cmd) for cmd in commands) and not stripped_line.startswith('%'):
+            accumulated_command.append(stripped_line)
+            if stripped_line.endswith('}'):
+                extracted_lines.append(' '.join(accumulated_command))
+                accumulated_command = []
+            else:
+                inside_command = True
+            continue
+
+        if stripped_line.startswith('\\usepackage') and not stripped_line.startswith('%'):
+            main_part, sep, comment = line.partition('%')
+            main_part = main_part.strip()
+            comment = sep + comment if sep else ''
+
+            match = re.match(r'\\usepackage(\[.*?\])?\{(.*?)\}', main_part)
+            if match:
+                package_name = match.group(2)
+                wrapped_line = f"\\IfFileExists{{{package_name}.sty}}{{{main_part}}}{{}}{comment}"
+                
+                if package_name in packages_to_comment_out:
+                    wrapped_line = f"% {wrapped_line}"
+                
+                extracted_lines.append(wrapped_line)
+
+    return extracted_lines
+
+def extract_newcommands(latex_source: str) -> list[str]:
+    """
+    Extracts all newcommand definitions from a LaTeX document, including multi-line definitions with nested and escaped braces
+    """
+    # pattern to match both \newcommand{\cmdname} and \newcommand\cmdname
+    pattern = re.compile(r'\\newcommand\s*(\\\w+|{\s*\\\w+\s*})\s*(\[[0-9]+\])?\s*{', re.DOTALL)
+    
+    matches = []
+    start_pos = 0
+
+    while True:
+        # Search for the next \newcommand
+        match = pattern.search(latex_source, start_pos)
+        if not match:
+            break
+        
+        # Extract the starting position of the matched \newcommand
+        start = match.start()
+        
+        # Find the closing brace for this \newcommand
+        brace_count = 0
+        end_pos = match.end()
+        while end_pos < len(latex_source):
+            char = latex_source[end_pos]
+            
+            # Skip over escaped braces
+            if char == '\\' and end_pos + 1 < len(latex_source) and latex_source[end_pos + 1] in '{}':
+                end_pos += 2
+                continue
+            
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == -1:  # Matched the closing brace for \newcommand
+                    end_pos += 1
+                    break
+            end_pos += 1
+        
+        # Append the full \newcommand definition to the list of matches
+        matches.append(latex_source[start:end_pos])
+        
+        # Move the start position to search for the next \newcommand
+        start_pos = end_pos
+    
+    return matches
+
+def save_additional_commands(directory: str, latex_source: str) -> None:
+    """
+    Extracts LaTeX definitions and saves them to ADDITIONAL.tex
+    """
+    additional_tex_path = os.path.join(directory, 'ADDITIONAL.tex')
+
+    lines_1 = extract_definitions_and_usepackage_lines(latex_source)
+    lines_2 = extract_newcommands(latex_source)
+    lines = lines_1 + lines_2
+
+    if not lines:
+        general_logger.info("No additional commands or packages found in LaTeX source.")
+        # Create empty ADDITIONAL.tex file
+        with open(additional_tex_path, 'w', encoding='utf-8') as file:
+            file.write('% Additional LaTeX packages and commands\n')
+        return
+
+    with open(additional_tex_path, 'w', encoding='utf-8') as file:
+        file.write('\n'.join(lines))
+
+    general_logger.info(f"Extracted and saved additional commands and packages to {additional_tex_path}")
 
 def add_additional_tex(content: str) -> str:
     """
@@ -103,35 +197,55 @@ def process_stage(stage: int, latex_source: str, beamer_code: str, linter_log: s
     """
     Sends the prompt to the language model, extracts the Beamer code from the response, and saves it to the specified path.
     """
-    if stage == 1:
-        prompt_file = "prompt_initial.txt"
-    elif stage == 2:
-        prompt_file = "prompt_update.txt"
-    elif stage == 3:
-        prompt_file = "prompt_revise.txt"
-    else:
+    # Map stage numbers to stage names
+    stage_names = {1: 'initial', 2: 'update', 3: 'revise'}
+    
+    if stage not in stage_names:
         general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
         sys.exit(1)
     
-    prompt_template = read_file(prompt_file)
-    prompt = prompt_template.replace('PLACEHOLDER_FOR_FIGURE_PATHS', ' '.join(figure_paths))
-
-    if stage == 1:
-        full_prompt = (
-            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
-            f'========The following are the instructions ========\n{prompt}'
+    stage_name = stage_names[stage]
+    
+    # Prepare variables for prompt rendering
+    prompt_vars = {
+        'latex_source': latex_source,
+        'figure_paths': ' '.join(figure_paths)
+    }
+    
+    # Add stage-specific variables
+    if stage in [2, 3]:  # update and revise stages need beamer_code
+        prompt_vars['beamer_code'] = beamer_code
+    
+    if stage == 3:  # revise stage needs linter_log
+        prompt_vars['linter_log'] = linter_log
+    
+    try:
+        # Get the rendered prompt and system message
+        system_message = prompt_manager.get_system_message(stage_name)
+        user_prompt = prompt_manager.get_prompt(stage_name, **prompt_vars)
+        
+        general_logger.info(f"Sending paper and prompt (based on {stage_name} stage) to LLM...")
+        
+        # Call the LLM with the new prompt format
+        response = client.chat.completions.create(
+            model="gpt-4.1-2025-04-14",
+            messages=[{
+                "role": "system",
+                "content": system_message
+            }, {
+                "role": "user",
+                "content": user_prompt
+            }]
         )
-    elif stage == 2 or stage == 3:
-        full_prompt = (
-            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
-            f'========The following are the slides ======== \n'
-            f'```latex\n{beamer_code}\n```\n ================\n\n'
-            f'========The following are the instructions ========\n{prompt}'
-        )
-        if stage == 3:
-            full_prompt += f'\n\n ======== The following is the result of ChkTeX ========\n{linter_log}\n'
+        
+        llm_logger.info(f"Sent prompt for stage '{stage_name}' to LLM:\n{user_prompt}")
+        llm_logger.info(f"Received response from LLM:\n{response}")
+        general_logger.info("Received response from LLM.")
+        
+    except Exception as e:
+        general_logger.error(f"Error generating prompt for stage {stage}: {e}")
+        sys.exit(1)
 
-    response = LLMcall(full_prompt, stage=stage)
     new_beamer_code = extract_content_from_response(response)
     new_beamer_code = add_additional_tex(new_beamer_code)
     
@@ -147,18 +261,28 @@ def process_stage(stage: int, latex_source: str, beamer_code: str, linter_log: s
 def main(args):
     # Define paths
     tex_files_directory = f"source/{args.arxiv_id}/"
-    flattened_tex_path = os.path.join(tex_files_directory, "FLATTENED.tex")
     slides_tex_path = os.path.join(tex_files_directory, "slides.tex")
 
-    # Check if FLATTENED.tex exists
-    if not os.path.isfile(flattened_tex_path):
-        general_logger.error(f"FLATTENED.tex not found in {tex_files_directory}")
+    # Create directory if it doesn't exist
+    os.makedirs(tex_files_directory, exist_ok=True)
+
+    # Get LaTeX source using arxiv-to-prompt with custom cache directory
+    general_logger.info(f"Getting LaTeX source for {args.arxiv_id} using arxiv-to-prompt")
+    try:
+        latex_source = process_latex_source(
+            args.arxiv_id, 
+            keep_comments=False, 
+            remove_appendix_section=True,
+            cache_dir=tex_files_directory
+        )
+    except Exception as e:
+        general_logger.error(f"Failed to get LaTeX source from arxiv-to-prompt: {e}")
         sys.exit(1)
 
-    general_logger.info(f"Using LaTeX file: {flattened_tex_path}")
+    # Extract and save additional commands to ADDITIONAL.tex
+    save_additional_commands(tex_files_directory, latex_source)
 
-    # Read the content of FLATTENED.tex
-    latex_source = read_file(flattened_tex_path)
+    # Find image files in the downloaded directory
     figure_paths = find_image_files(tex_files_directory)
 
     if args.use_pdfcrop:
