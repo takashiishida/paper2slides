@@ -90,6 +90,124 @@ def extract_content_from_response(response: dict, language: str = 'latex') -> st
     content = match.group(1).strip() if match else None
     return content
 
+def extract_definitions_and_usepackage_lines(latex_source: str) -> list[str]:
+    """
+    Extracts definitions and usepackage lines from LaTeX source
+    """
+    commands = ['\\def', '\\DeclareMathOperator', '\\DeclarePairedDelimiter']
+    packages_to_comment_out = ['amsthm', 'color', 'hyperref', 'xcolor', 'ragged2e', 'times', 'graphicx', 'enumitem']
+    extracted_lines = []
+
+    lines = latex_source.split('\n')
+    inside_command = False
+    accumulated_command = []
+
+    for line in lines:
+        stripped_line = line.strip()
+
+        if inside_command:
+            accumulated_command.append(stripped_line)
+            if stripped_line.endswith('}'):
+                extracted_lines.append(' '.join(accumulated_command))
+                inside_command = False
+                accumulated_command = []
+            continue
+
+        if any(stripped_line.startswith(cmd) for cmd in commands) and not stripped_line.startswith('%'):
+            accumulated_command.append(stripped_line)
+            if stripped_line.endswith('}'):
+                extracted_lines.append(' '.join(accumulated_command))
+                accumulated_command = []
+            else:
+                inside_command = True
+            continue
+
+        if stripped_line.startswith('\\usepackage') and not stripped_line.startswith('%'):
+            main_part, sep, comment = line.partition('%')
+            main_part = main_part.strip()
+            comment = sep + comment if sep else ''
+
+            match = re.match(r'\\usepackage(\[.*?\])?\{(.*?)\}', main_part)
+            if match:
+                package_name = match.group(2)
+                wrapped_line = f"\\IfFileExists{{{package_name}.sty}}{{{main_part}}}{{}}{comment}"
+                
+                if package_name in packages_to_comment_out:
+                    wrapped_line = f"% {wrapped_line}"
+                
+                extracted_lines.append(wrapped_line)
+
+    return extracted_lines
+
+def extract_newcommands(latex_source: str) -> list[str]:
+    """
+    Extracts all newcommand definitions from a LaTeX document, including multi-line definitions with nested and escaped braces
+    """
+    # pattern to match both \newcommand{\cmdname} and \newcommand\cmdname
+    pattern = re.compile(r'\\newcommand\s*(\\\w+|{\s*\\\w+\s*})\s*(\[[0-9]+\])?\s*{', re.DOTALL)
+    
+    matches = []
+    start_pos = 0
+
+    while True:
+        # Search for the next \newcommand
+        match = pattern.search(latex_source, start_pos)
+        if not match:
+            break
+        
+        # Extract the starting position of the matched \newcommand
+        start = match.start()
+        
+        # Find the closing brace for this \newcommand
+        brace_count = 0
+        end_pos = match.end()
+        while end_pos < len(latex_source):
+            char = latex_source[end_pos]
+            
+            # Skip over escaped braces
+            if char == '\\' and end_pos + 1 < len(latex_source) and latex_source[end_pos + 1] in '{}':
+                end_pos += 2
+                continue
+            
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == -1:  # Matched the closing brace for \newcommand
+                    end_pos += 1
+                    break
+            end_pos += 1
+        
+        # Append the full \newcommand definition to the list of matches
+        matches.append(latex_source[start:end_pos])
+        
+        # Move the start position to search for the next \newcommand
+        start_pos = end_pos
+    
+    return matches
+
+def save_additional_commands(directory: str, latex_source: str) -> None:
+    """
+    Extracts LaTeX definitions and saves them to ADDITIONAL.tex
+    """
+    additional_tex_path = os.path.join(directory, 'ADDITIONAL.tex')
+
+    lines_1 = extract_definitions_and_usepackage_lines(latex_source)
+    lines_2 = extract_newcommands(latex_source)
+    lines = lines_1 + lines_2
+
+    if not lines:
+        general_logger.info("No additional commands or packages found in LaTeX source.")
+        # Create empty ADDITIONAL.tex file
+        with open(additional_tex_path, 'w', encoding='utf-8') as file:
+            file.write('% Additional LaTeX packages and commands\n')
+        return
+
+    with open(additional_tex_path, 'w', encoding='utf-8') as file:
+        file.write('\n'.join(lines))
+
+    general_logger.info(f"Extracted and saved additional commands and packages to {additional_tex_path}")
+
 def add_additional_tex(content: str) -> str:
     """
     Check if \input{ADDITIONAL.tex} exists (LLM may ignore the instruction to include this)
@@ -165,6 +283,9 @@ def main(args):
     except Exception as e:
         general_logger.error(f"Failed to get LaTeX source from arxiv-to-prompt: {e}")
         sys.exit(1)
+
+    # Extract and save additional commands to ADDITIONAL.tex
+    save_additional_commands(tex_files_directory, latex_source)
 
     # Find image files in the downloaded directory
     figure_paths = find_image_files(tex_files_directory)
