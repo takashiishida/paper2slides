@@ -6,6 +6,7 @@ from openai import OpenAI
 import argparse
 import subprocess
 from arxiv_to_prompt import process_latex_source
+from prompts import PromptManager
 
 # Set up general logging
 general_logger = logging.getLogger('general')
@@ -26,6 +27,9 @@ llm_logger.addHandler(llm_file_handler)
 # Initialize OpenAI client
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
+# Initialize prompt manager
+prompt_manager = PromptManager()
+
 def find_image_files(directory: str) -> list[str]:
     """
     Searches for image files (.pdf, .png, .jpeg, .jpg) in the specified directory and
@@ -40,44 +44,6 @@ def find_image_files(directory: str) -> list[str]:
                 image_files.append(relative_path)
     return image_files
 
-def read_file(file_path: str) -> str:
-    with open(file_path, 'r') as file:
-        return file.read()
-    
-def LLMcall(prompt: str, stage: int) -> dict:
-    """
-    Calls the language model with the provided prompt.
-    
-    :param prompt: Prompt to send to the language model
-    :param stage: Stage 1 or 2. Stage 1 is for the initial prompt, and stage 2 is for the update prompt.
-    :return: Response from the language model
-    """
-    if stage == 1:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_initial.txt) to LLM:\n{prompt}") 
-        general_logger.info("Sending paper and prompt (based on prompt_initial.txt) to LLM...")
-    elif stage == 2:
-        llm_logger.info(f"Sending paper and prompt (based on prompt_update.txt) to LLM:\n{prompt}")
-        general_logger.info("Sending paper, beamer, and prompt (based on prompt_update.txt) to LLM...")
-    elif stage == 3:
-        llm_logger.info(f"Sending prompt (based on prompt_revise.txt) to LLM:\n{prompt}")
-        general_logger.info("Sending beamer, linter, and prompt (based on prompt_revise.txt) to LLM...")
-    else:
-        general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
-        sys.exit(1)
-    response = client.chat.completions.create(model="gpt-4o",
-        messages=[{
-                "role": "system",
-                "content": "You are a professional assistant specialized in machine learning and deep learning, LaTeX, and Beamer."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-    )
-    llm_logger.info(f"Received response from LLM:\n{response}")
-    general_logger.info("Received response from LLM.")
-    return response
 
 def extract_content_from_response(response: dict, language: str = 'latex') -> str | None:
     """
@@ -222,35 +188,55 @@ def process_stage(stage: int, latex_source: str, beamer_code: str, linter_log: s
     """
     Sends the prompt to the language model, extracts the Beamer code from the response, and saves it to the specified path.
     """
-    if stage == 1:
-        prompt_file = "prompt_initial.txt"
-    elif stage == 2:
-        prompt_file = "prompt_update.txt"
-    elif stage == 3:
-        prompt_file = "prompt_revise.txt"
-    else:
+    # Map stage numbers to stage names
+    stage_names = {1: 'initial', 2: 'update', 3: 'revise'}
+    
+    if stage not in stage_names:
         general_logger.error("Invalid stage. Please provide either 1, 2, or 3.")
         sys.exit(1)
     
-    prompt_template = read_file(prompt_file)
-    prompt = prompt_template.replace('PLACEHOLDER_FOR_FIGURE_PATHS', ' '.join(figure_paths))
-
-    if stage == 1:
-        full_prompt = (
-            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
-            f'========The following are the instructions ========\n{prompt}'
+    stage_name = stage_names[stage]
+    
+    # Prepare variables for prompt rendering
+    prompt_vars = {
+        'latex_source': latex_source,
+        'figure_paths': ' '.join(figure_paths)
+    }
+    
+    # Add stage-specific variables
+    if stage in [2, 3]:  # update and revise stages need beamer_code
+        prompt_vars['beamer_code'] = beamer_code
+    
+    if stage == 3:  # revise stage needs linter_log
+        prompt_vars['linter_log'] = linter_log
+    
+    try:
+        # Get the rendered prompt and system message
+        system_message = prompt_manager.get_system_message(stage_name)
+        user_prompt = prompt_manager.get_prompt(stage_name, **prompt_vars)
+        
+        general_logger.info(f"Sending paper and prompt (based on {stage_name} stage) to LLM...")
+        
+        # Call the LLM with the new prompt format
+        response = client.chat.completions.create(
+            model="gpt-4.1-2025-04-14",
+            messages=[{
+                "role": "system",
+                "content": system_message
+            }, {
+                "role": "user",
+                "content": user_prompt
+            }]
         )
-    elif stage == 2 or stage == 3:
-        full_prompt = (
-            f'========The following is the paper ========\n{latex_source}\n ================\n\n'
-            f'========The following are the slides ======== \n'
-            f'```latex\n{beamer_code}\n```\n ================\n\n'
-            f'========The following are the instructions ========\n{prompt}'
-        )
-        if stage == 3:
-            full_prompt += f'\n\n ======== The following is the result of ChkTeX ========\n{linter_log}\n'
+        
+        llm_logger.info(f"Sent prompt for stage '{stage_name}' to LLM:\n{user_prompt}")
+        llm_logger.info(f"Received response from LLM:\n{response}")
+        general_logger.info("Received response from LLM.")
+        
+    except Exception as e:
+        general_logger.error(f"Error generating prompt for stage {stage}: {e}")
+        sys.exit(1)
 
-    response = LLMcall(full_prompt, stage=stage)
     new_beamer_code = extract_content_from_response(response)
     new_beamer_code = add_additional_tex(new_beamer_code)
     
