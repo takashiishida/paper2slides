@@ -97,3 +97,6 @@ The unified `paper2slides.py` script automates the entire process, typically com
 
 > [!WARNING]
 > The script will download files from the internet (arXiv), send information to the OpenAI API, and compile locally. Please be cautious about the content being shared and the potential risks.
+
+> [!IMPORTANT]
+> Please respect the license of arXiv papers when using this tool. Each paper on arXiv has a specific license (CC BY, CC BY-SA, CC BY-NC-SA, CC BY-NC-ND, arXiv perpetual license, or CC Zero) that governs how the work can be used, modified, and distributed. Before creating and sharing slides from any paper, check the paper's license on its arXiv page and ensure your use complies with the license terms. For more information, see [arXiv's license documentation](https://info.arxiv.org/help/license/index.html).
