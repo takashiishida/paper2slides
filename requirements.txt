@@ -3,3 +3,8 @@ arxiv
 openai
 arxiv-to-prompt>=0.2.0
 PyYAML>=6.0
+PyMuPDF
+pypdf
+python-dotenv
+unidecode
+streamlit
