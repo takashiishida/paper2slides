@@ -93,8 +93,6 @@ streamlit run app.py
 - Click "Run Full Pipeline" to generate slides and compile the PDF, or use "Generate Only" / "Compile Only".
 - After the pipeline completes, you can interactively edit the slides in the left panel; changes are recompiled automatically.
 
-Thanks to 
-
 ## How does it work?
 
 The process begins by downloading the source files of an arXiv paper. The main LaTeX file is identified and flattened, merging all input files into a single document (`FLATTENED.tex`) with [arxiv-to-prompt](https://github.com/takashiishida/arxiv-to-prompt). We preprocess this merged file by removing comments and the appendix. This preprocessed file, along with instructions for creating good slides, forms the basis of our prompt.
@@ -106,19 +104,6 @@ To aid the LLM, we create a file called `ADDITIONAL.tex`, which contains all nec
 The LLM generates Beamer code from the LaTeX source, but since the first run may have issues, we ask the LLM to self-inspect and refine the output. Optionally, a third step involves using a linter to check the generated code, with the results fed back to the LLM for further corrections (this linter step was inspired by [The AI Scientist](https://www.arxiv.org/abs/2408.06292)). Finally, the Beamer code is compiled into a PDF presentation using pdflatex.
 
 The unified `paper2slides.py` script automates the entire process, typically completing in less than a few minutes with GPT-4.1 for a single paper.
-
-
-### Web UI
-Run the Streamlit app (implemented by [Bili-Sakura](https://github.com/Bili-Sakura)):
-```bash
-streamlit run app.py
-```
-
-- Enter an arXiv ID (e.g., 2505.18102) or a search query in the sidebar.
-- Click "Run Full Pipeline" to generate slides and compile the PDF, or use "Generate Only" / "Compile Only".
-- Generated files are saved under `source/<arxiv_id>/` (`slides.tex`, `slides.pdf`).
-- After the pipeline completes, you can interactively edit the slides in the left panel; changes are recompiled automatically.
-
 
 > [!WARNING]
 > The script will download files from the internet (arXiv), send information to the OpenAI API, and compile locally. Please be cautious about the content being shared and the potential risks.
