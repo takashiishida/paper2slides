@@ -1,0 +1,11 @@
+source
+
+# Environments
+.env
+.venv
+venv/
+__pycache__/
+*.pyc
+
+# VSCode
+.vscode/
