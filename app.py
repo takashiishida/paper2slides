@@ -41,12 +41,12 @@ def display_pdf_as_images(file_path: str):
         for i in range(page_count):
             page = doc.load_page(i)
             pix = page.get_pixmap(matrix=mat, alpha=False)
-            st.image(pix.tobytes("png"), use_column_width=True, caption=f"Page {i+1}")
+            st.image(pix.tobytes("png"), use_container_width=True, caption=f"Page {i+1}")
     else:
         page_num = st.slider("Page", min_value=1, max_value=page_count, value=1)
         page = doc.load_page(page_num - 1)
         pix = page.get_pixmap(matrix=mat, alpha=False)
-        st.image(pix.tobytes("png"), use_column_width=True, caption=f"Page {page_num}")
+        st.image(pix.tobytes("png"), use_container_width=True, caption=f"Page {page_num}")
 
     doc.close()
 

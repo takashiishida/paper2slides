@@ -2,154 +2,25 @@
 # This file will contain the core logic for paper2slides,
 # refactored from the original CLI scripts to be used by the Streamlit app.
 
-import sys
 import subprocess
 import logging
 import yaml
 from pathlib import Path
 import re
 import os
-import sys
 import logging
 from openai import OpenAI
-import argparse
 import subprocess
 import arxiv
-import fitz  # PyMuPDF
 from arxiv_to_prompt import process_latex_source
 from prompts import PromptManager
 from dotenv import load_dotenv
 import yaml
-import time
-import requests
-from zipfile import ZipFile
+import shutil
 import threading
 from typing import Optional, Tuple
 
 load_dotenv(override=True)
-
-# Initialize OpenAI client
-# client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-# MinerU API URL
-API_URL = "https://mineru.net/api/v4"
-
-
-def load_mineru_api_key():
-    """Load MinerU API key from environment."""
-    api_key = os.getenv("MINERU_API_KEY")
-    if not api_key:
-        raise RuntimeError("MINERU_API_KEY not found in environment")
-    return api_key
-
-
-def create_task(api_key: str, pdf_url: str) -> str:
-    url = f"{API_URL}/extract/task"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    data = {
-        "url": pdf_url,
-        "extra_formats": ["latex"],
-    }
-    response = requests.post(url, headers=headers, json=data, timeout=30)
-    response.raise_for_status()
-    result = response.json()
-    if result.get("code") != 0:
-        raise RuntimeError(f"Failed to create task: {result}")
-    return result["data"]["task_id"]
-
-
-def poll_task(
-    api_key: str, task_id: str, interval: int = 6, max_wait_seconds: int = 180
-) -> dict:
-    url = f"{API_URL}/extract/task/{task_id}"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    start_time = time.time()
-    attempt = 0
-    max_attempts = (
-        max_wait_seconds // interval
-    )  # Calculate max attempts based on timeout
-
-    while True:
-        attempt += 1
-        elapsed_time = time.time() - start_time
-
-        # Check timeout before making request
-        if elapsed_time > max_wait_seconds:
-            logging.error(
-                f"MinerU polling timed out after {elapsed_time:.1f}s ({attempt-1} attempts)"
-            )
-            raise TimeoutError(f"MinerU polling timed out after {max_wait_seconds}s")
-
-        try:
-            res = requests.get(url, headers=headers, timeout=30)
-            res.raise_for_status()
-            result = res.json()
-            if result.get("code") != 0:
-                raise RuntimeError(f"Failed to get task result: {result}")
-            data = result["data"]
-            state = data.get("state")
-
-            logging.info(
-                f"MinerU task {task_id} poll attempt {attempt}/{max_attempts}: state={state} (elapsed: {elapsed_time:.1f}s)"
-            )
-
-            if state == "done":
-                logging.info(
-                    f"MinerU task completed successfully after {elapsed_time:.1f}s"
-                )
-                return data
-            elif state == "failed":
-                error_msg = data.get("err_msg", "Unknown error")
-                logging.error(f"MinerU task failed: {error_msg}")
-                raise RuntimeError(f"Task failed: {error_msg}")
-            elif state not in ["pending", "running"]:
-                logging.warning(f"MinerU task in unexpected state: {state}")
-
-        except requests.RequestException as e:
-            logging.warning(f"Network error during polling attempt {attempt}: {e}")
-            # Continue polling on network errors unless we've timed out
-
-        time.sleep(interval)
-
-
-def download_and_extract(zip_url: str, output_dir: Path) -> Path:
-    response = requests.get(zip_url, stream=True, timeout=60)
-    response.raise_for_status()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = output_dir / "result.zip"
-    with open(zip_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-    with ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(output_dir)
-    return output_dir
-
-
-def convert_pdf_to_latex(pdf_url: str, output_dir: str) -> Path:
-    api_key = load_mineru_api_key()
-    task_id = create_task(api_key, pdf_url)
-    try:
-        result = poll_task(api_key, task_id)
-        zip_url = result.get("full_zip_url")
-        if not zip_url:
-            raise RuntimeError("No result url found")
-        return download_and_extract(zip_url, Path(output_dir))
-    except TimeoutError as e:
-        logging.error(f"MinerU conversion timed out for PDF: {pdf_url}")
-        logging.error(
-            "This can happen with complex PDFs. Try again or use a different paper."
-        )
-        raise e
-    except Exception as e:
-        logging.error(f"MinerU conversion failed for PDF: {pdf_url}")
-        raise e
-
 
 def search_arxiv(query: str, max_results: int = 3) -> list[arxiv.Result]:
     """
@@ -356,6 +227,33 @@ def find_image_files(directory: str) -> list[str]:
                 relative_path = os.path.relpath(os.path.join(root, file), directory)
                 image_files.append(relative_path)
     return image_files
+
+
+def copy_image_assets_from_cache(arxiv_id: str, cache_dir: str, dest_dir: str) -> None:
+    """
+    Copy all image assets from arxiv-to-prompt cache into the destination directory,
+    preserving relative paths. This ensures includegraphics paths like 'figures/...' resolve
+    during compilation.
+
+    Expected cache layout example:
+    cache/<arxiv_id>/<arxiv_id>/(figures/... | images/...)
+    """
+    paper_cache_root = Path(cache_dir) / arxiv_id
+    if not paper_cache_root.exists():
+        return
+
+    image_extensions = {".pdf", ".png", ".jpeg", ".jpg"}
+    for root, _, files in os.walk(paper_cache_root):
+        for file in files:
+            if any(file.endswith(ext) for ext in image_extensions):
+                abs_path = Path(root) / file
+                rel_path = abs_path.relative_to(paper_cache_root)
+                dest_path = Path(dest_dir) / rel_path
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copy2(abs_path, dest_path)
+                except Exception as e:
+                    logging.debug(f"Skipped copying asset {abs_path}: {e}")
 
 
 def extract_content_from_response(
@@ -639,28 +537,22 @@ def generate_slides(
     logging.info("Fetching LaTeX source from arXiv...")
     latex_source = get_latex_from_arxiv_with_timeout(arxiv_id, cache_dir)
     if latex_source is None:
-        logging.info(
-            "Falling back to PDF-to-LaTeX extraction via MinerU (may take longer)..."
+        logging.error(
+            "Failed to retrieve LaTeX source from arXiv within timeout. Aborting generation."
         )
-        try:
-            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-            extracted_dir = convert_pdf_to_latex(pdf_url, tex_files_directory)
-            # Read the .tex file (heuristic: choose the largest .tex file)
-            tex_files = list(Path(extracted_dir).glob("**/*.tex"))
-            if not tex_files:
-                logging.error("No .tex files found in the extracted MinerU result.")
-                return False
-            main_tex_file = max(tex_files, key=lambda p: p.stat().st_size)
-            latex_source = read_file(str(main_tex_file))
-        except Exception as e:
-            logging.error(f"PDF-to-LaTeX fallback failed: {e}")
-            return False
+        return False
 
     # Extract definitions and packages to build ADDITIONAL.tex
     logging.info("Extracting definitions and packages...")
     defs_pkgs = extract_definitions_and_usepackage_lines(latex_source)
     add_tex_contents = build_additional_tex(defs_pkgs)
     save_additional_tex(add_tex_contents, tex_files_directory)
+
+    # Ensure figures and images referenced by the paper are available under source/<id>/
+    try:
+        copy_image_assets_from_cache(arxiv_id, cache_dir, tex_files_directory)
+    except Exception as e:
+        logging.debug(f"Copying image assets skipped due to error: {e}")
 
     # Add \input{ADDITIONAL.tex} if missing
     latex_source = add_additional_tex(latex_source)
